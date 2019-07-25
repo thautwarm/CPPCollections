@@ -89,7 +89,7 @@ private:
     }
 
     template<typename A>
-    constexpr inline int _release_ret(){
+    constexpr inline size_t _release_ret(){
         auto vec = std::get<index_tools::index<A, Args...>()>(contents);
         size_t cnt = 0;
         for(auto&& e: vec){
