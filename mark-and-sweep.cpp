@@ -12,7 +12,7 @@ typedef void (*TraverseFn)(reference, MemStore, MemToVisit&);
 
 struct MemCell{
     TraverseFn mark_f;
-    uint8_t marked;    
+    uint8_t marked;
     uint8_t buf[0];
 };
 
@@ -127,7 +127,7 @@ reference new_array_of_objs(Runtime* rt, size_t n){
 }
 
 int main(){
-    printf("header size: %d\n", bufoffset); 
+    printf("header size: %d\n", bufoffset);
     printf("cell size: %d\n", sizeof(MemCell));
 
     Runtime rt;
