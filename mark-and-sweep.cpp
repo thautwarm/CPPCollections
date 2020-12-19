@@ -4,16 +4,19 @@
 #include<vector>
 #include<stack>
 struct Runtime;
+struct MemCell;
+using reference = uint8_t*;
+using MemStore = std::vector<MemCell*>;
+using MemToVisit = std::stack<MemCell*>;
+typedef void (*TraverseFn)(reference, MemStore, MemToVisit&);
 
 struct MemCell{
-    uint32_t marked: 1, mark_f:31;
+    TraverseFn mark_f;
+    uint8_t marked;    
     uint8_t buf[0];
 };
 
 const size_t bufoffset = offsetof(MemCell, buf);
-using reference = uint8_t*;
-using Memory = std::vector<MemCell*>;
-using MemToVisit = std::stack<MemCell*>;
 
 template<typename T=reference, typename G>
 T ptrAdd(G ptr, int64_t off){
@@ -22,7 +25,7 @@ T ptrAdd(G ptr, int64_t off){
     );
 }
 
-typedef void (*TraverseFn)(reference, Memory, MemToVisit&);
+
 const int byte = sizeof(uint8_t);
 
 MemCell* allocate(size_t n){
@@ -33,9 +36,8 @@ MemCell* allocate(size_t n){
 }
 
 struct Runtime{
-    Memory heap;
-    std::vector<TraverseFn> mark_fns;
-    Runtime() : heap(), mark_fns() {}
+    MemStore heap;
+    Runtime() : heap() {}
 };
 
 void gc(Runtime* rt, MemToVisit& root){
@@ -45,11 +47,11 @@ void gc(Runtime* rt, MemToVisit& root){
       root.pop();
       if (!TOS->marked){
           TOS->marked = 1;
-          if (TOS->mark_f != 0)
-             rt->mark_fns[TOS->mark_f](ptrAdd(TOS, bufoffset), heap, root);
+          if (TOS->mark_f != nullptr)
+             TOS->mark_f(ptrAdd(TOS, bufoffset), heap, root);
       }
     }
-    Memory newheap;
+    MemStore newheap;
 
     for(auto &&m: heap){
         if (m->marked){
@@ -78,10 +80,7 @@ T* to_buf(MemCell* cell){
 }
 
 template<typename T>
-void mark_f(uint8_t* buf, Memory heap, MemToVisit& to_visit){}
-
-template<typename T>
-uint32_t mark_fi(){ return 0; }
+void mark_f(uint8_t* buf, MemStore heap, MemToVisit& to_visit){}
 
 // =================== test GC =====================
 
@@ -96,10 +95,7 @@ struct BI{
 };
 
 template<>
-uint32_t mark_fi<OArr>(){ return 1; }
-
-template<>
-void mark_f<OArr>(reference buf, Memory heap, MemToVisit& to_visit){
+void mark_f<OArr>(reference buf, MemStore heap, MemToVisit& to_visit){
 
     auto&& oarr = reinterpret_cast<OArr*>(buf);
     for(size_t&& i = 0; i < oarr->size; ++i){
@@ -108,13 +104,9 @@ void mark_f<OArr>(reference buf, Memory heap, MemToVisit& to_visit){
     }
 }
 
-
-template<>
-uint32_t mark_fi<BI>(){ return 0; }
-
 reference new_bi(Runtime* rt, int32_t i, int32_t j){
    auto&& cell = allocate(8);
-   cell->mark_f = mark_fi<BI>();
+   cell->mark_f = mark_f<BI>;
    BI* bi = to_buf<BI>(cell);
    bi->i = i;
    bi->j = j;
@@ -124,7 +116,7 @@ reference new_bi(Runtime* rt, int32_t i, int32_t j){
 
 reference new_array_of_objs(Runtime* rt, size_t n){
    auto&& cell = allocate(8 * n + 8);
-   cell->mark_f = mark_fi<OArr>();
+   cell->mark_f = mark_f<OArr>;
    auto&& arr = to_buf<OArr>(cell);
    arr->size = n;
    for(size_t i = 0; i < n; i++){
@@ -134,15 +126,11 @@ reference new_array_of_objs(Runtime* rt, size_t n){
    return reinterpret_cast<reference>(arr);
 }
 
-void setup(Runtime* rt){
-  rt->mark_fns.push_back(nullptr);
-  rt->mark_fns.push_back(mark_f<OArr>);
-  rt->mark_fns.push_back(nullptr);
-}
-
 int main(){
+    printf("header size: %d\n", bufoffset); 
+    printf("cell size: %d\n", sizeof(MemCell));
+
     Runtime rt;
-    setup(&rt);
     auto&& oarr = new_array_of_objs(&rt, 4);
     auto&& spec = reinterpret_cast<OArr*>(oarr);
 
